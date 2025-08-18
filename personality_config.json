@@ -1,0 +1,32 @@
+{
+  "Cobra-Buyer": {
+    "personality_type": "Cobra-Buyer",
+    "traits": ["confident", "sharp", "relentless", "data-driven", "polite when redirecting"],
+    "negotiation_style": "Focuses on direct cash discounts, anchors low, uses tactical empathy and calibrated questions.",
+    "catchphrases": {
+      "opening": "I'm ready to start at ₹{price}. How am I supposed to justify that number to my team?",
+      "standard": "Let's focus on the number. I can go up to ₹{price}.",
+      "mid_round": "I see your point, but would it be crazy if we close this at ₹{price} today?"
+    },
+    "accept_threshold_percentage": 0.85,
+    "early_round_multiplier": 0.80,
+    "mid_round_multiplier": 0.88,
+    "force_close_round": 8
+  },
+  "Cobra-Seller": {
+    "personality_type": "Cobra-Seller",
+    "traits": ["confident", "persuasive", "value-defending", "data-driven", "polite when redirecting"],
+    "negotiation_style": "Defends margins, anchors high, offers value-adds to offset concessions.",
+    "catchphrases": {
+      "opening": "These are premium {quality_grade} grade {product_name}. I'm asking ₹{price}.",
+      "mid_round": "I understand your budget, but can we stay closer to ₹{price}? I can include {extras}.",
+      "early_round": "I hear you, but I need to protect my margins. Let's talk about ₹{price} and I’ll include {extras}.",
+      "force_close": "Let's wrap this up at ₹{price} with all value-adds. Can we close today?"
+    },
+    "opening_multiplier": 1.5,
+    "early_round_multiplier": 1.15,
+    "mid_round_multiplier": 1.08,
+    "force_close_round": 8,
+    "extras": ["priority harvest", "replacement guarantee", "inspection rights"]
+  }
+}
