@@ -15,6 +15,7 @@ def load_personality_config(filepath: str) -> Dict[str, Any]:
     with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# Load the buyer/seller configuration data
 config_data = load_personality_config(PERSONALITY_FILE)
 
 # ============================================
@@ -23,24 +24,27 @@ config_data = load_personality_config(PERSONALITY_FILE)
 
 @dataclass
 class Product:
+    """Represents the product being negotiated."""
     name: str
     category: str
     quantity: int
     quality_grade: str
     origin: str
     base_market_price: int
-    attributes: Dict[str, Any]
+    attributes: Dict[str, Any]  # Extra product-specific details (ripeness, etc.)
 
 @dataclass
 class NegotiationContext:
+    """Keeps track of negotiation state at any round."""
     product: Product
     your_budget: int
     current_round: int
     seller_offers: List[int]
     your_offers: List[int]
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, str]]  # Conversation history
 
 class DealStatus(Enum):
+    """Defines the possible deal outcomes."""
     ONGOING = "ongoing"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
@@ -50,22 +54,27 @@ class DealStatus(Enum):
 # ============================================
 
 class BaseBuyerAgent(ABC):
+    """Abstract base class for buyer agents."""
+
     def __init__(self, name: str):
         self.name = name
-        self.personality = self.define_personality()
-        
+        self.personality = self.define_personality()  # Each buyer must define personality
+    
     @abstractmethod
     def define_personality(self) -> Dict[str, Any]:
+        """Load or define personality (catchphrases, thresholds, etc.)"""
         pass
 
     @abstractmethod
     def generate_opening_offer(self, context: NegotiationContext) -> Tuple[int, str]:
+        """Generate the first offer of the negotiation."""
         pass
 
     @abstractmethod
     def respond_to_seller_offer(
         self, context: NegotiationContext, seller_price: int, seller_message: str
     ) -> Tuple[DealStatus, int, str]:
+        """Respond to a seller's price with a counter-offer or accept."""
         pass
 
 # ============================================
@@ -73,11 +82,14 @@ class BaseBuyerAgent(ABC):
 # ============================================
 
 class CobraBuyer(BaseBuyerAgent):
+    """A concrete buyer agent using config-defined behavior."""
+
     def __init__(self, name: str, config: Dict[str, Any]):
         self.config = config
         super().__init__(name)
 
     def define_personality(self) -> Dict[str, Any]:
+        """Return buyer's personality config."""
         return self.config
 
     def build_buyer_prompt(self, context: NegotiationContext) -> str:
@@ -98,17 +110,17 @@ class CobraBuyer(BaseBuyerAgent):
         Start negotiation using your opening offer and tactics.
         """
 
-    # ✅ Fixed
     def generate_opening_offer(self, context: NegotiationContext) -> Tuple[int, str]:
+        """Make the buyer's first move (usually aggressive)."""
         early_mult = float(self.config.get("early_round_multiplier", 0.85))
         offer = min(int(context.product.base_market_price * early_mult), context.your_budget)
         msg_tpl = self.config.get("catchphrases", {}).get("opening", "Starting at ₹{price}.")
         return offer, msg_tpl.format(price=offer)
 
-    # ✅ Fixed
     def respond_to_seller_offer(
         self, context: NegotiationContext, seller_price: int, seller_message: str
     ) -> Tuple[DealStatus, int, str]:
+        """Respond to seller based on round number and thresholds."""
         round_num = context.current_round
 
         acc_pct = float(self.config.get("accept_threshold_percentage", 0.9))
@@ -117,23 +129,24 @@ class CobraBuyer(BaseBuyerAgent):
         force_round = int(self.config.get("force_close_round", 10))
         phrases = self.config.get("catchphrases", {})
 
+        # Buyer threshold for accepting
         threshold = int(context.product.base_market_price * acc_pct)
 
-        # Accept only if seller price is low enough *and* within budget
+        # Accept deal if seller price is low enough and within budget
         if seller_price <= threshold and seller_price <= context.your_budget:
             return DealStatus.ACCEPTED, seller_price, f"Deal accepted at ₹{seller_price}! Let's finalize."
 
-        # Final round – make a last counter but don't mark accepted
+        # Last round → make one last counter
         if round_num >= force_round:
             final_offer = min(seller_price, context.your_budget)
             msg = phrases.get("final", "Final from me: ₹{price}. Can we sign today?").format(price=final_offer)
             return DealStatus.ONGOING, final_offer, msg
 
-        # Mid/early rounds
-        if round_num >= force_round - 3:
+        # Mid/early round counters
+        if round_num >= force_round - 3:  # Late phase
             counter_offer = min(int(seller_price * mid_mult), context.your_budget)
             message = phrases.get("mid_round", "Let’s wrap at ₹{price}.").format(price=counter_offer)
-        else:
+        else:  # Early phase
             counter_offer = min(int(seller_price * early_mult), context.your_budget)
             message = phrases.get("standard", "I can do ₹{price}.").format(price=counter_offer)
 
@@ -144,9 +157,11 @@ class CobraBuyer(BaseBuyerAgent):
 # ============================================
 
 class CobraSeller:
+    """A seller agent with configurable negotiation strategy."""
+
     def __init__(self, name: str, product_min_price: int, config: Dict[str, Any]):
         self.name = name
-        self.min_price = product_min_price
+        self.min_price = product_min_price  # Seller won’t go below this
         self.config = config
         self.opening_price = None
 
@@ -168,8 +183,8 @@ class CobraSeller:
         Start negotiation using your opening offer and extras.
         """
 
-    # ✅ Fixed
     def get_opening_price(self, product: Product) -> Tuple[int, str]:
+        """First seller offer: usually higher than market price."""
         opening_mult = float(self.config.get("opening_multiplier", 1.2))
         self.opening_price = int(product.base_market_price * opening_mult)
         msg_tpl = self.config.get("catchphrases", {}).get(
@@ -182,8 +197,8 @@ class CobraSeller:
         )
         return self.opening_price, message
 
-    # ✅ Fixed
     def respond_to_buyer(self, buyer_offer: int, round_num: int) -> Tuple[int, str, bool]:
+        """Respond to buyer with a counter-offer or accept."""
         early_mult = float(self.config.get("early_round_multiplier", 1.1))
         mid_mult = float(self.config.get("mid_round_multiplier", 1.04))
         force_round = int(self.config.get("force_close_round", 10))
@@ -191,11 +206,11 @@ class CobraSeller:
         extras_list = self.config.get("extras", [])
         extras = ", ".join(extras_list) if extras_list else ""
 
-        # Accept only if buyer meets/exceeds min price
+        # Accept if buyer offer ≥ min price
         if buyer_offer >= self.min_price:
             return buyer_offer, f"You have a deal at ₹{buyer_offer}!", True
 
-        # Final counter but not auto-accept
+        # Final round → seller forces closure
         if round_num >= force_round:
             counter = max(self.min_price, buyer_offer)
             msg = phrases.get("force_close", "Last price ₹{price}.").format(price=counter)
@@ -203,14 +218,15 @@ class CobraSeller:
                 counter = min(counter, self.opening_price)
             return counter, msg, False
 
-        # Mid/early rounds
-        if round_num >= force_round - 3:
+        # Mid/early round counters
+        if round_num >= force_round - 3:  # Late phase
             counter = max(self.min_price, int(buyer_offer * mid_mult))
             msg = phrases.get("mid_round", "₹{price} including {extras}.").format(price=counter, extras=extras)
-        else:
+        else:  # Early phase
             counter = max(self.min_price, int(buyer_offer * early_mult))
             msg = phrases.get("early_round", "₹{price} including {extras}.").format(price=counter, extras=extras)
 
+        # Ensure seller doesn’t exceed opening price
         if self.opening_price is not None:
             counter = min(counter, self.opening_price)
 
@@ -221,6 +237,7 @@ class CobraSeller:
 # ============================================
 
 def test_buyer_scenarios():
+    """Simulate negotiation where buyer opens first."""
     print("\n=== BUYER STARTS NEGOTIATION ===")
     buyer_agent = CobraBuyer("Cobra-Buyer", config_data["Cobra-Buyer"])
     seller_agent = CobraSeller("Cobra-Seller", 160000, config_data["Cobra-Seller"])
@@ -228,21 +245,27 @@ def test_buyer_scenarios():
     product = Product("Alphonso Mangoes", "Mangoes", 100, "A", "Ratnagiri", 180000, {"ripeness": "optimal"})
     context = NegotiationContext(product, 220000, 1, [], [], [])
 
+    # Build prompts (for reference/logging, not used here)
     _ = buyer_agent.build_buyer_prompt(context)
     _ = seller_agent.build_seller_prompt(product, context)
 
+    # Buyer makes opening move
     buyer_offer, buyer_msg = buyer_agent.generate_opening_offer(context)
     print(f"Round {context.current_round} | Buyer: {buyer_msg} (₹{buyer_offer})")
     context.your_offers.append(buyer_offer)
     context.messages.append({"role": "buyer", "message": buyer_msg})
 
+    # Seller responds
     seller_offer, seller_msg, accepted = seller_agent.respond_to_buyer(buyer_offer, context.current_round)
     print(f"Round {context.current_round} | Seller: {seller_msg} (₹{seller_offer})")
     context.seller_offers.append(seller_offer)
     context.messages.append({"role": "seller", "message": seller_msg})
 
+    # Continue negotiation loop
     while not accepted and context.current_round < 10:
         context.current_round += 1
+
+        # Buyer responds to seller
         status, buyer_offer, buyer_msg = buyer_agent.respond_to_seller_offer(
             context, seller_offer, seller_msg
         )
@@ -251,20 +274,22 @@ def test_buyer_scenarios():
         context.messages.append({"role": "buyer", "message": buyer_msg})
 
         if status == DealStatus.ACCEPTED:
-            print("✅ Deal closed by buyer!")
+            print(" Deal closed by buyer!")
             break
 
+        # Seller responds to buyer
         seller_offer, seller_msg, accepted = seller_agent.respond_to_buyer(buyer_offer, context.current_round)
         print(f"Round {context.current_round} | Seller: {seller_msg} (₹{seller_offer})")
         context.seller_offers.append(seller_offer)
         context.messages.append({"role": "seller", "message": seller_msg})
 
         if accepted:
-            print("✅ Deal closed by seller!")
+            print(" Deal closed by seller!")
             break
 
 
 def test_seller_scenarios():
+    """Simulate negotiation where seller opens first."""
     print("\n=== SELLER STARTS NEGOTIATION ===")
     buyer_agent = CobraBuyer("Cobra-Buyer", config_data["Cobra-Buyer"])
     seller_agent = CobraSeller("Cobra-Seller", 160000, config_data["Cobra-Seller"])
@@ -275,11 +300,13 @@ def test_seller_scenarios():
     _ = buyer_agent.build_buyer_prompt(context)
     _ = seller_agent.build_seller_prompt(product, context)
 
+    # Seller makes opening move
     seller_offer, seller_msg = seller_agent.get_opening_price(product)
     print(f"Round {context.current_round} | Seller: {seller_msg} (₹{seller_offer})")
     context.seller_offers.append(seller_offer)
     context.messages.append({"role": "seller", "message": seller_msg})
 
+    # Buyer responds
     status, buyer_offer, buyer_msg = buyer_agent.respond_to_seller_offer(
         context, seller_offer, seller_msg
     )
@@ -288,21 +315,24 @@ def test_seller_scenarios():
     context.messages.append({"role": "buyer", "message": buyer_msg})
 
     if status == DealStatus.ACCEPTED:
-        print("✅ Deal closed by buyer!")
+        print(" Deal closed by buyer!")
         return
 
     accepted = False
     while not accepted and context.current_round < 10:
         context.current_round += 1
+
+        # Seller responds to buyer
         seller_offer, seller_msg, accepted = seller_agent.respond_to_buyer(buyer_offer, context.current_round)
         print(f"Round {context.current_round} | Seller: {seller_msg} (₹{seller_offer})")
         context.seller_offers.append(seller_offer)
         context.messages.append({"role": "seller", "message": seller_msg})
 
         if accepted:
-            print("✅ Deal closed by seller!")
+            print(" Deal closed by seller!")
             break
 
+        # Buyer responds
         status, buyer_offer, buyer_msg = buyer_agent.respond_to_seller_offer(
             context, seller_offer, seller_msg
         )
@@ -311,7 +341,7 @@ def test_seller_scenarios():
         context.messages.append({"role": "buyer", "message": buyer_msg})
 
         if status == DealStatus.ACCEPTED:
-            print("✅ Deal closed by buyer!")
+            print(" Deal closed by buyer!")
             break
 
 # ============================================
@@ -319,6 +349,7 @@ def test_seller_scenarios():
 # ============================================
 
 if __name__ == "__main__":
-    
+    # Run both scenarios for testing
     test_buyer_scenarios()
     test_seller_scenarios()
+# The above code simulates a negotiation process between a buyer and a seller agent.
