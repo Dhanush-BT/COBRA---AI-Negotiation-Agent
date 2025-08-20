@@ -7,7 +7,7 @@ The goal is to simulate **realistic buyer-seller negotiations** using configurab
 
 ## 🌟 Why This Strategy Works  
 - **LLM-friendly JSON pipeline** → reduces ambiguity & errors.  
-- **Chris Woakes' techniques** → realistic human-style negotiation.  
+- **Chris Voss' techniques** → realistic human-style negotiation.  
 - **BAFO integration** → ensures closure phase has clarity.  
 - **Round-structured growth** → keeps negotiations realistic and non-random.  
 - **Consistency in character** → Buyer and Seller personalities remain stable across rounds.
